@@ -80,6 +80,69 @@ retrying hot.
 - Track-level ISRC is not present in /album/{id}/tracks responses (only on
   /track/{id}); Phase 1 may fetch ISRCs for disambiguation later if needed.
 
+### Lidarr plugin interface surfaces (verified against reference repos)
+
+Plugin marker (`Plugin.cs`, namespace `NzbDrone.Core.Plugins`):
+- `class AntraPlugin : Plugin { Name; Owner; GithubUrl }` - trivial.
+
+Indexer (`NzbDrone.Core.Indexers`, base `HttpIndexerBase<TIndexerSettings>`):
+- ctor: (httpClient, indexerStatusService, configService, parsingService, logger)
+- overrides: `Name`; `Protocol => nameof(AntraDownloadProtocol)`; `SupportsRss=false`;
+  `SupportsSearch=true`; `PageSize`; `RateLimit`.
+- `GetRequestGenerator()` -> `IIndexerRequestGenerator` with `GetRecentRequests()`,
+  `GetSearchRequests(AlbumSearchCriteria)`, `GetSearchRequests(ArtistSearchCriteria)`.
+  `AlbumSearchCriteria` exposes ArtistQuery + AlbumQuery + the Album (with tracks):
+  the bridge call source.
+- `GetParser()` -> `IParseIndexerResponse.ParseResponse(IndexerResponse)` building
+  `ReleaseInfo` items: Guid, Artist, Album, DownloadUrl, InfoUrl, PublishDate,
+  DownloadProtocol, Codec="FLAC", Container="Lossless", Size, Title
+  (TrevTV style: "Artist - Album (Year) [FLAC] [WEB]").
+- Settings class : `IIndexerSettings` (FluentValidation validator; `[FieldDefinition]`
+  fields; `BaseUrl` property required by the interface).
+
+Download client (`NzbDrone.Core.Download.Clients`, base `DownloadClientBase<TSettings>`):
+- ctor: (configService, diskProvider, remotePathMappingService, localizationService, logger)
+- overrides: `Protocol`, `Name`; `GetItems()` -> `IEnumerable<DownloadClientItem>`
+  (DownloadId, Title, Status Queued/Downloading/Completed/Failed,
+  TotalSize/RemainingSize/RemainingTime, OutputPath, CanMoveFiles/CanBeRemoved);
+  `RemoveItem(item, deleteData)`; `Download(RemoteAlbum, IIndexer)` -> Task<string>
+  returns the download id; throw `ReleaseUnavailableException` /
+  `DownloadClientRejectedReleaseException` for clean user-visible failures;
+  `GetStatus()` -> `DownloadClientInfo { IsLocalhost, OutputRootFolders }`;
+  `Test(failures)`.
+- Remote path mapping: `_remotePathMappingService.RemapRemoteToLocal(Settings.Host, path)`
+  (Slskd pattern). Our settings carry the bridge host as the mapping key; staging
+  path is the OutputRootFolder Lidarr imports from.
+- Settings : `IProviderConfig` (`[FieldDefinition]`, `Privacy = PrivacyLevel.ApiKey`
+  for secrets; `IsValidPath()` / `ValidHost()` / `ValidRootUrl()` / `NotEmpty()`).
+
+Protocol: `class AntraDownloadProtocol : IDownloadProtocol {}` in NzbDrone.Core.Indexers;
+both classes reference `nameof(AntraDownloadProtocol)`; users enable it in Delay
+Profiles (the new protocol shows up as a tab after install).
+
+### Packaging / release conventions (copy the TrevTV model)
+
+- net8.0 class lib; ProjectReference to a Lidarr source submodule
+  (`ext/Lidarr` -> github.com/Lidarr/Lidarr, branch **plugins**) with
+  Private=false + ExcludeAssets=runtime (mirrors TrevTV build.yml + csproj).
+- Build output lands in `_plugins/net8.0/<PluginName>/`; GitHub Actions (ubuntu) zips
+  `_plugins/net8.0/<PluginName>/<PluginName>.*` as `<PluginName>.net8.0.zip` and
+  attaches it to a GitHub release. Version scheme <major>.<minor>.<patch>.<run_number>.
+- ILRepack merges 3rd-party deps into the single dll (we can likely avoid extra deps).
+- Install verified end-to-end: extract to config/plugins/<Owner>/<Name>/ (dll + pdb +
+  deps.json) -> restart -> `/api/v1/system/plugins` lists it -> the plugin's indexer
+  AND download client appear in `/api/v1/indexer/schema` + `/api/v1/downloadclient/schema`
+  (confirmed: Deezer appears in both).
+
+### Dev environment notes
+
+- dotnet SDK 10.0.101 is on the dev machine; net8.0 targets build with it (CI pins
+  8.0.405 + global.json; local dev stays on 10).
+- Dev Lidarr: 3.1.6.5078 native on the dev machine, port 8688, data in `dev/config/`,
+  API key `<dev-api-key>` (dev only), branch nightly. Launched via
+  `Lidarr.Console.exe '--data=C:\...\dev\config' --nobrowser`. Reference plugin
+  (TrevTV Deezer) installed and loaded; /system/plugins + schemas verified.
+
 ## Decisions
 
 - Dev Lidarr runs NATIVE on the dev machine (no Docker available on this host;
@@ -90,9 +153,12 @@ retrying hot.
 
 ## Open questions (for Max)
 
-- Confirm the two test albums (mainstream: Daft Punk - Random Access Memories;
-  obscure: Susumu Yokota - Sakura) or pick others for the E2E.
-- Public GitHub repos OK for lidarr-plugin-antra (needed so Lidarr can install
-  from the repo URL)? 
-- Soulseek/slskd credentials for the fallback tier: provide later via vault,
-  or keep Soulseek disabled in the bridge?
+- Confirm the two test albums (mainstream: Daft Punk - Random Access Memories 2013;
+  obscure: Susumu Yokota - Sakura 1999) or pick others for the E2E. Both already
+  match + validate cleanly in the Phase 0 proof.
+- Public GitHub repos OK for lidarr-plugin-antra + antra-bridge (needed so Lidarr
+  can install the plugin from the repo URL and fetch release assets)?
+- Soulseek/slskd credentials for the fallback tier: provide later via vault, or
+  keep Soulseek disabled in the bridge initially?
+- Production hosting for the bridge (part of the the NAS runbook): propose the NAS
+  Docker (staging on the share) vs the dev machine service. Decide at runbook time.

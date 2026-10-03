@@ -1,0 +1,2 @@
+# prototype deps; Phase 1 adds fastapi, uvicorn, sqlalchemy
+requests>=2.31

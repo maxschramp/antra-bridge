@@ -109,6 +109,7 @@ class ResolveRequest(BaseModel):
     album: str
     year: Optional[int] = None
     tracks: Optional[list[TrackIn]] = None
+    alternates: Optional[list[list[TrackIn]]] = None
     refresh: bool = False
 
 
@@ -117,9 +118,11 @@ class DownloadRequest(BaseModel):
     album: str
     year: Optional[int] = None
     tracks: Optional[list[TrackIn]] = None
+    alternates: Optional[list[list[TrackIn]]] = None
     deezer_url: Optional[str] = None
     format: Optional[str] = None
     sources: Optional[str] = None
+    origin: Optional[str] = None
 
 
 @app.get("/health")
@@ -158,8 +161,15 @@ def download(req: DownloadRequest) -> dict:
 
 
 @app.get("/jobs")
-def jobs(status: Optional[str] = None, limit: int = 50) -> dict:
-    return {"jobs": store.list_jobs(status=status, limit=min(200, max(1, limit)))}
+def jobs(status: Optional[str] = None, limit: int = 50, origin: Optional[str] = None) -> dict:
+    effective_limit = min(200, max(1, limit))
+    if origin:
+        # Filter on the request's origin tag (e.g. "lidarr") so the download
+        # client never surfaces jobs triggered by other bridge users.
+        rows = store.list_jobs(status=status, limit=500)
+        rows = [row for row in rows if (row.get("request") or {}).get("origin") == origin]
+        return {"jobs": rows[:effective_limit]}
+    return {"jobs": store.list_jobs(status=status, limit=effective_limit)}
 
 
 @app.get("/jobs/{job_id}")

@@ -32,7 +32,13 @@ MAX_CANDIDATES_IN_PAYLOAD = 8
 _DEZER_URL_RE = re.compile(r"deezer\.com/(?:[a-z]{2}/)?album/(\d+)", re.IGNORECASE)
 
 
-def canonical_key(artist: str, album: str, year: Optional[int], tracks: Optional[list[dict]]) -> str:
+def canonical_key(
+    artist: str,
+    album: str,
+    year: Optional[int],
+    tracks: Optional[list[dict]],
+    alternates: Optional[list[list[dict]]] = None,
+) -> str:
     payload = {
         "artist": (artist or "").strip(),
         "album": (album or "").strip(),
@@ -40,6 +46,13 @@ def canonical_key(artist: str, album: str, year: Optional[int], tracks: Optional
         "tracks": [
             {"title": (t.get("title") or "").strip(), "duration_s": t.get("duration_s")}
             for t in (tracks or [])
+        ],
+        "alternates": [
+            [
+                {"title": (t.get("title") or "").strip(), "duration_s": t.get("duration_s")}
+                for t in alt
+            ]
+            for alt in (alternates or [])
         ],
     }
     return hashlib.sha1(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
@@ -128,7 +141,7 @@ def _run_probe(cfg: BridgeConfig, deezer_url: str) -> dict:
 
 
 def resolve_request(cfg: BridgeConfig, store: Store, req: dict, *, allow_probe: bool) -> dict:
-    key = canonical_key(req.get("artist"), req.get("album"), req.get("year"), req.get("tracks"))
+    key = canonical_key(req.get("artist"), req.get("album"), req.get("year"), req.get("tracks"), req.get("alternates"))
     query = {"artist": req.get("artist"), "album": req.get("album"), "year": req.get("year")}
     want_probe = allow_probe and cfg.probe_enabled and cfg.probe_tracks > 0 and cfg.probe_tracks is not None
     want_probe = bool(want_probe)
@@ -146,11 +159,14 @@ def resolve_request(cfg: BridgeConfig, store: Store, req: dict, *, allow_probe: 
 
     payload = _payload_from_provided_url(req)
     if payload is None or not payload.get("ok"):
+        alternate_sets = [expected_from_tracks(alt) for alt in (req.get("alternates") or [])]
+        alternate_sets = [s for s in alternate_sets if s]
         matched = match_album(
             req.get("artist") or "",
             req.get("album") or "",
             year=req.get("year"),
             expected_tracks=expected_from_tracks(req.get("tracks")),
+            expected_tracks_sets=alternate_sets or None,
         )
         matched_payload = _match_payload(matched)
         # A caller-provided URL failing verification is more informative than a

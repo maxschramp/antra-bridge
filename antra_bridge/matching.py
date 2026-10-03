@@ -45,7 +45,9 @@ DURATION_TOLERANCE_S = 8       # cross-edition fade-pad drift allowance
 
 _FEAT_RE = re.compile(r"\s*[\(\[]\s*(feat|ft|with|prod)\.?\s[^)\]]*[\)\]]", re.I)
 _EDITION_RE = re.compile(
-    r"\s*[\(\[]\s*(deluxe|remaster|anniversary|expanded|special|bonus|edition|version)[^)\]]*[\)\]]",
+    r"\s*[\(\[]\s*[^)\]\[]*?"
+    r"(deluxe|remaster|anniversary|expanded|special|bonus|edition|version|drumless|instrumental|remixes)"
+    r"[^)\]]*[\)\]]",
     re.I,
 )
 
@@ -171,9 +173,16 @@ def match_album(
     album: str,
     year: Optional[int] = None,
     expected_tracks: Optional[list[TrackExpectation]] = None,
+    expected_tracks_sets: Optional[list[list[TrackExpectation]]] = None,
     client: Optional[DeezerClient] = None,
 ) -> MatchResult:
     """Find and validate a Deezer album for the given identity.
+
+    `expected_tracks_sets` optionally carries several acceptable tracklists for
+    one album: Lidarr stores a row per release (original, deluxe, anniversary,
+    ...) and any of them is a legitimate target. A candidate is accepted when
+    its track count equals ANY supplied set and that set validates
+    track-by-track. `expected_tracks` remains for single-tracklist callers.
 
     Returns MatchResult; ok=False with reasons + candidates_considered when the
     edition cannot be validated. Never raises for ordinary mismatches.
@@ -183,7 +192,21 @@ def match_album(
 
     want_artist = normalize_artist(artist)
     want_title = normalize_album_title(album)
-    expected_count = len(expected_tracks) if expected_tracks else None
+
+    sets: list[list[TrackExpectation]] = []
+    if expected_tracks_sets:
+        sets.extend(s for s in expected_tracks_sets if s)
+    if expected_tracks:
+        sets.append(expected_tracks)
+    # De-duplicate by track count (primary list keeps precedence).
+    seen_counts: set[int] = set()
+    deduped: list[list[TrackExpectation]] = []
+    for track_set in sets:
+        if len(track_set) not in seen_counts:
+            seen_counts.add(len(track_set))
+            deduped.append(track_set)
+    sets = deduped
+    expected_counts = {len(s) for s in sets}
 
     try:
         raw_candidates = client.search_albums(artist, album)
@@ -225,9 +248,8 @@ def match_album(
     # Rank eligible candidates: prefer exact track count (when known), then
     # title similarity, then year proximity, then non-tribute record types.
     def rank_key(entry: dict) -> tuple:
-        detail_year = None
         count_match = 0
-        if expected_count is not None and entry.get("nb_tracks") == expected_count:
+        if expected_counts and entry.get("nb_tracks") in expected_counts:
             count_match = 1
         year_pen = 0
         if year and entry.get("release_year"):
@@ -255,15 +277,15 @@ def match_album(
     attempts: list[str] = []
     for entry in eligible:
         count = entry.get("nb_tracks")
-        if expected_count is not None and count != expected_count:
+        if expected_counts and count not in expected_counts:
             attempts.append(
                 f"{entry['title']} ({entry['deezer_id']}, {count} tracks): "
-                f"track count {count} != expected {expected_count}"
+                f"track count {count} not in expected {sorted(expected_counts)}"
             )
             continue
 
         # Deep validation when we have expectations; otherwise accept the score.
-        if expected_tracks is None:
+        if not sets:
             result.ok = True
             result.deezer_id = entry["deezer_id"]
             result.deezer_url = f"https://www.deezer.com/album/{entry['deezer_id']}"
@@ -284,16 +306,23 @@ def match_album(
             attempts.append(f"{entry['title']} ({entry['deezer_id']}): tracklist fetch failed: {exc}")
             continue
 
-        if len(actual_tracks) != len(expected_tracks):
+        expected_set = next((s for s in sets if len(s) == count), None)
+        if expected_set is None:
+            attempts.append(
+                f"{entry['title']} ({entry['deezer_id']}): tracklist has no matching expected set"
+            )
+            continue
+
+        if len(actual_tracks) != len(expected_set):
             attempts.append(
                 f"{entry['title']} ({entry['deezer_id']}): tracklist length "
-                f"{len(actual_tracks)} != expected {len(expected_tracks)}"
+                f"{len(actual_tracks)} != expected {len(expected_set)}"
             )
             continue
 
         comparisons: list[TrackComparison] = []
         matched = 0
-        for i, (exp, act) in enumerate(zip(expected_tracks, actual_tracks), start=1):
+        for i, (exp, act) in enumerate(zip(expected_set, actual_tracks), start=1):
             t_sim = similarity(
                 normalize_track_title(exp.title), normalize_track_title(act.get("title", ""))
             )
@@ -315,7 +344,7 @@ def match_album(
                 )
             )
 
-        ratio = matched / len(expected_tracks)
+        ratio = matched / len(expected_set)
         if ratio >= TRACK_MATCH_RATIO_MIN:
             result.ok = True
             result.deezer_id = entry["deezer_id"]
@@ -331,21 +360,22 @@ def match_album(
             )
             result.track_report = comparisons
             result.reasons.append(
-                f"validated {matched}/{len(expected_tracks)} tracks "
+                f"validated {matched}/{len(expected_set)} tracks "
                 f"(ratio {ratio:.2f}) against '{entry['title']}' ({count} tracks)"
             )
             return result
 
         attempts.append(
-            f"{entry['title']} ({entry['deezer_id']}): only {matched}/{len(expected_tracks)} "
+            f"{entry['title']} ({entry['deezer_id']}): only {matched}/{len(expected_set)} "
             f"tracks matched (ratio {ratio:.2f} < {TRACK_MATCH_RATIO_MIN})"
         )
 
     result.reasons.append("no Deezer edition passed validation")
     result.reasons.extend(attempts[:6])
-    if expected_count is not None:
+    if expected_counts:
         counts = sorted({e.get("nb_tracks") for e in eligible if e.get("nb_tracks")})
         result.reasons.append(
-            f"expected {expected_count} tracks; candidate counts on Deezer: {counts}"
+            f"expected one of {sorted(expected_counts)} tracks; "
+            f"candidate counts on Deezer: {counts}"
         )
     return result

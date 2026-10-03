@@ -138,8 +138,8 @@ Profiles (the new protocol shows up as a tab after install).
 
 - dotnet SDK 10.0.101 is on the dev machine; net8.0 targets build with it (CI pins
   8.0.405 + global.json; local dev stays on 10).
-- Dev Lidarr: 3.1.6.5078 native on the dev machine, port 8688, data in `dev/config/`,
-  API key `<dev-api-key>` (dev only), branch nightly. Launched via
+- Dev Lidarr: 3.1.6.5078 native on the dev machine, port 8688, data in
+  `dev/config/` (its API key lives there; not in this repo), branch nightly. Launched via
   `Lidarr.Console.exe '--data=C:\...\dev\config' --nobrowser`. Reference plugin
   (TrevTV Deezer) installed and loaded; /system/plugins + schemas verified.
 
@@ -248,5 +248,5 @@ Ops lessons (Windows dev host):
 Resolved (2026-10-03): test albums confirmed (Daft Punk - Random Access
 Memories; Susumu Yokota - Sakura); public GitHub repos approved; Soulseek
 disabled; Phase 1 green-lit.
-Open: production hosting for the bridge (runbook phase) - the NAS Docker with
-staging on the share proposed vs the dev machine service.
+Open: production hosting for the bridge (runbook phase) - NAS Docker with
+staging on the share proposed vs dev-machine service.

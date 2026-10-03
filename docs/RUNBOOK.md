@@ -1,7 +1,7 @@
 # Runbook: Antra for Lidarr
 
-Everything here was exercised on the dev instance (the dev machine) except the
-the NAS sections, which are a plan pending explicit approval.
+Everything here was exercised on the dev instance except the NAS sections,
+which are the rollout plan (run with approval).
 
 Ports used by the dev setup: bridge `8890`, dev Lidarr `8688`.
 
@@ -81,7 +81,7 @@ fetches the `<PluginName>.net8.0.zip` release asset.
 4. Remote path mapping only when Lidarr and the bridge see different paths to
    the staging dir (e.g. container vs host).
 
-## 3. the NAS rollout plan (PENDING APPROVAL - not yet executed)
+## 3. NAS rollout plan (run with approval)
 
 Preconditions: explicit user sign-off; dev E2E green.
 

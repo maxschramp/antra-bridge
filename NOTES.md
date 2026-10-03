@@ -208,9 +208,28 @@ E2E results (2026-10-03):
   artist/album/title/date/genre tags. (That job exercised the resume/skip
   path - files were already staged by the bridge proof run; the fresh
   download path is evidenced by the bridge full proof and smoke test.)
-- Susumu Yokota - Sakura: search -> grab -> bridge job `27e06d48` running,
-  resuming past 3 staged tracks and downloading the rest fresh through the
-  Lidarr-triggered path. [completion + import recorded in git history]
+- Susumu Yokota - Sakura: search -> grab -> bridge job `27e06d48` completed
+  12/12 (4 resumed from staging, 8 fresh via tidal_mirror; zero failures)
+  -> Lidarr imported all 12 tracks (16-bit/44.1k FLAC, correct tags). This is
+  the strongest artifact: the fresh downloads ran through the
+  Lidarr-triggered job end to end.
+- Dev Lidarr history after both albums: 2 downloadImported, 25
+  trackFileImported, 0 failures.
+
+Failure drill (bridge down):
+- indexer Test -> clean 400 "Unable to connect to indexer ... (127.0.0.1:8890)";
+  download client Test -> clean 400 "Antra bridge is not reachable: ...".
+  Lidarr stays healthy (no crash, no hang); after the bridge restarts, both
+  tests return 200. Test endpoints need the existing provider's id in the
+  payload (uniqueness check) - drill script: scripts/e2e/failure_drill.py.
+
+Ops lessons (Windows dev host):
+- Kill the bridge by matching its command line (`python -m antra_bridge`),
+  not the bash wrapper pid: killing the wrapper leaves the server alive and a
+  later "bridge down" test silently hits the old process.
+- uv venvs on Windows run as a launcher pair (Scripts/python.exe spawns the
+  base interpreter as a child); a process count of 2 is ONE instance. The
+  child holds the listening socket.
 
 ## Decisions
 

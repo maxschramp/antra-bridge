@@ -1,2 +1,8 @@
-# prototype deps; Phase 1 adds fastapi, uvicorn, sqlalchemy
+# Bridge service dependencies.
+# The bridge runs the Antra engine in-process: the Antra clone's
+# requirements-runtime.txt must be installed into the same environment
+# (dev: the antra venv; prod: the deploy venv/container).
+fastapi>=0.115
+uvicorn>=0.30
+python-dotenv>=1.0
 requests>=2.31

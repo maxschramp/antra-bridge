@@ -108,6 +108,9 @@ class MatchResult:
     reasons: list[str] = field(default_factory=list)
     track_report: list[TrackComparison] = field(default_factory=list)
     candidates_considered: list[dict] = field(default_factory=list)
+    nb_tracks: Optional[int] = None
+    matched_title: Optional[str] = None
+    matched_artist: Optional[str] = None
 
 
 class DeezerClient:
@@ -264,6 +267,9 @@ def match_album(
             result.ok = True
             result.deezer_id = entry["deezer_id"]
             result.deezer_url = f"https://www.deezer.com/album/{entry['deezer_id']}"
+            result.nb_tracks = entry.get("nb_tracks")
+            result.matched_title = entry.get("title")
+            result.matched_artist = entry.get("artist")
             result.confidence = round(
                 0.55 * entry["artist_sim"] + 0.45 * entry["title_sim"], 3
             )
@@ -314,6 +320,9 @@ def match_album(
             result.ok = True
             result.deezer_id = entry["deezer_id"]
             result.deezer_url = f"https://www.deezer.com/album/{entry['deezer_id']}"
+            result.nb_tracks = entry.get("nb_tracks")
+            result.matched_title = entry.get("title")
+            result.matched_artist = entry.get("artist")
             result.confidence = round(
                 0.45 * entry["artist_sim"]
                 + 0.35 * entry["title_sim"]

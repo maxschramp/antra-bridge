@@ -143,22 +143,46 @@ Profiles (the new protocol shows up as a tab after install).
   `Lidarr.Console.exe '--data=C:\...\dev\config' --nobrowser`. Reference plugin
   (TrevTV Deezer) installed and loaded; /system/plugins + schemas verified.
 
+## Phase 1: bridge service (antra_bridge package)
+
+Built and proven. FastAPI + SQLite; runs the Antra engine in-process.
+Endpoints: /health, /resolve, /download, /jobs, /jobs/{id}, DELETE /jobs/{id}.
+
+Design decisions:
+- Engine runs in-process (AntraService from the clone), driven by RuntimeOptions
+  (staging dir, format, source preference). No subprocess/JSON-CLI parsing.
+- Deezer URLs carry an "exclusive" source intent inside Antra (Deezer family
+  only). The bridge clears source_service/source_rule on the fetched tracks so
+  every grab runs Antra's full multi-source cascade; the Deezer link is
+  metadata identity, not a source lock.
+- /resolve caches in SQLite keyed on the exact request identity; failures are
+  cached too, so Lidarr search retries do not hammer the APIs. Refresh bypasses.
+  Availability probe (search-only) samples N tracks per adapter and reports
+  hit/miss/rate_limited/unavailable per source.
+- One worker thread by default (BRIDGE_CONCURRENCY=1) plus a shared semaphore
+  serializing engine operations, to respect free-tier rate limits. Rate-limit
+  shaped failures set job status `rate_limited` and cool the worker down
+  (BRIDGE_RATE_LIMIT_COOLDOWN_S); /health surfaces cooldown_until.
+- Cancel is cooperative (Antra's DownloadController): between tracks, not
+  mid-track. Job statuses: queued/running/completed/failed/cancelled/rate_limited.
+- Optional BRIDGE_API_TOKEN gates every endpoint except /health (empty in dev).
+
 ## Decisions
 
+- Soulseek disabled (explicit user decision): SLSKD_AUTO_BOOTSTRAP=false, no
+  credentials; the community-mirror tier covers the sources.
+- Public GitHub repos under maxschramp approved for antra-bridge and
+  lidarr-plugin-antra.
 - Dev Lidarr runs NATIVE on the dev machine (no Docker available on this host;
   WSL2 has systemd but no Docker). A Windows build from the nightly update
   channel was used; isolated data dir; port 8688.
 - Bridge will consume Antra as an external dependency (clone + venv), never
   modifying upstream (Elastic License 2.0).
 
-## Open questions (for Max)
+## Open questions
 
-- Confirm the two test albums (mainstream: Daft Punk - Random Access Memories 2013;
-  obscure: Susumu Yokota - Sakura 1999) or pick others for the E2E. Both already
-  match + validate cleanly in the Phase 0 proof.
-- Public GitHub repos OK for lidarr-plugin-antra + antra-bridge (needed so Lidarr
-  can install the plugin from the repo URL and fetch release assets)?
-- Soulseek/slskd credentials for the fallback tier: provide later via vault, or
-  keep Soulseek disabled in the bridge initially?
-- Production hosting for the bridge (part of the the NAS runbook): propose the NAS
-  Docker (staging on the share) vs the dev machine service. Decide at runbook time.
+Resolved (2026-10-03): test albums confirmed (Daft Punk - Random Access
+Memories; Susumu Yokota - Sakura); public GitHub repos approved; Soulseek
+disabled; Phase 1 green-lit.
+Open: production hosting for the bridge (runbook phase) - the NAS Docker with
+staging on the share proposed vs the dev machine service.

@@ -167,6 +167,51 @@ Design decisions:
   mid-track. Job statuses: queued/running/completed/failed/cancelled/rate_limited.
 - Optional BRIDGE_API_TOKEN gates every endpoint except /health (empty in dev).
 
+## Phase 2: plugin + E2E (dev instance)
+
+Built: `lidarr-plugin-antra` (net8.0; HttpIndexerBase + DownloadClientBase +
+AntraDownloadProtocol; schemas verified in dev Lidarr 3.1.6.5078). E2E wiring
+on the dev instance (port 8688) with both test albums.
+
+Interface/contract updates found while wiring the E2E:
+- Lidarr searches with the MONITORED release's tracklist and stores every
+  edition as a separate release row. RAM's monitored release carries 30
+  tracks across 3 media; the first failing search sent a 22-track list from
+  another edition while the validated Deezer original is 13 tracks. Fix: the
+  plugin sends up to 6 de-duplicated release tracklists ("tracks" +
+  "alternates"); /resolve accepts a candidate whose count matches ANY set and
+  validates against that set. Verified offline against live Deezer
+  (evidence/test_multiset.py: 30-track primary + 13-track alternate ->
+  original 13-track edition, 13/13).
+- Edition regex updated: the keyword may appear anywhere inside brackets
+  ("(10th Anniversary Edition)" now normalizes to the base title; previously
+  it was dropped by title similarity, which made 22-track resolution fail).
+- Jobs carry an "origin" tag; the download client reads /jobs?origin=lidarr,
+  so jobs triggered outside Lidarr never appear in Lidarr's queue.
+
+Build gotchas (hit, fixed):
+- The vendored ext/Lidarr builds with AssemblyVersion `10.0.0.*`; a plugin
+  compiled against that fails to load in Lidarr nightly (FileLoadException:
+  Lidarr.Core "not an absolute path"). CI patches it to 3.0.0.4855;
+  scripts/build-local.sh applies the same patch before building.
+- ext/Lidarr expects `stylecop.json` at the solution root: `src/stylecop.json`
+  must exist in the plugin repo.
+- Referenced projects build via the sln only with Build.0 config entries for
+  them; SDK 10 generates .slnx by default (classic .sln kept for CI).
+- Lidarr API path validation on Windows wants backslash paths ("C:/..." is
+  rejected as Invalid Path for root folders / staging paths).
+
+E2E results (2026-10-03):
+- Daft Punk - Random Access Memories: search -> synthetic Antra release ->
+  auto-grab -> bridge job `645a698c` completed 13/13 -> Lidarr imported all
+  13 tracks into the library. Imported file: 24-bit/44.1k FLAC with correct
+  artist/album/title/date/genre tags. (That job exercised the resume/skip
+  path - files were already staged by the bridge proof run; the fresh
+  download path is evidenced by the bridge full proof and smoke test.)
+- Susumu Yokota - Sakura: search -> grab -> bridge job `27e06d48` running,
+  resuming past 3 staged tracks and downloading the rest fresh through the
+  Lidarr-triggered path. [completion + import recorded in git history]
+
 ## Decisions
 
 - Soulseek disabled (explicit user decision): SLSKD_AUTO_BOOTSTRAP=false, no

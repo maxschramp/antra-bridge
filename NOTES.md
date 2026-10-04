@@ -231,6 +231,24 @@ Ops lessons (Windows dev host):
   base interpreter as a child); a process count of 2 is ONE instance. The
   child holds the listening socket.
 
+## NAS rollout (2026-10-03)
+
+- Production NAS Lidarr was already on `lscr.io/linuxserver/lidarr:nightly`
+  (3.1.6.5078, same build as dev). No image switch; appdata backed up first
+  (tar + inspect + template + config.xml in `appdata/lidarr-backup`).
+- Bridge runs as a docker container on the NAS (built from
+  `appdata/antra-bridge`; user 99:100; `/mnt/user/antra-staging` mounted at
+  `/antra-staging` in BOTH bridge and Lidarr so no path mapping is needed).
+- Plugin installed from the published release zip; providers configured via
+  the API; Antra enabled in the default delay profile; autostart registered.
+- Trial album: Susumu Yokota - Sakura. The first search carried no tracklist
+  (a fresh artist's release rows load lazily), so the bridge matched on
+  heuristics and still picked the original skintone 1999 12-track edition;
+  12/12 downloaded via tidal_mirror; imported to the music library; tags
+  verified (16/44.1 FLAC).
+- Later searches after the artist refresh carry full tracklists, so
+  multi-edition validation is active from then on.
+
 ## Decisions
 
 - Soulseek disabled (explicit user decision): SLSKD_AUTO_BOOTSTRAP=false, no

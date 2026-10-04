@@ -1,7 +1,7 @@
 # Runbook: Antra for Lidarr
 
-Everything here was exercised on the dev instance except the NAS sections,
-which are the rollout plan (run with approval).
+Everything here was exercised on the dev instance; the NAS sections were
+executed for the first trial on 2026-10-03 (record in section 3).
 
 Ports used by the dev setup: bridge `8890`, dev Lidarr `8688`.
 
@@ -81,7 +81,7 @@ fetches the `<PluginName>.net8.0.zip` release asset.
 4. Remote path mapping only when Lidarr and the bridge see different paths to
    the staging dir (e.g. container vs host).
 
-## 3. NAS rollout plan (run with approval)
+## 3. NAS rollout (executed 2026-10-03)
 
 Preconditions: explicit user sign-off; dev E2E green.
 
@@ -106,8 +106,40 @@ Preconditions: explicit user sign-off; dev E2E green.
    if the bridge and Lidarr see it differently.
 5. Test one album end to end (search -> grab -> import). Keep qBittorrent
    untouched: Antra is additive (new indexer/download client + protocol).
-6. Rollback: stop antivra bridge, remove plugin dir, restore the backed-up
-   DB + revert the image tag (or delete the trial container).
+6. Rollback: stop the antra bridge, remove the plugin dir, restore the
+   backed-up DB + revert the image tag (or delete the trial container).
+
+### Deployment record (2026-10-03)
+
+- The production Lidarr already ran `lscr.io/linuxserver/lidarr:nightly`
+  (template-pinned, 3.1.6.5078), so no image switch was needed.
+- Bridge: image built on the NAS from `appdata/antra-bridge/` (Dockerfile
+  clones Antra + antra-bridge and pip-installs both requirement sets); run
+  as `99:100` with `restart unless-stopped`, port 8890, registered in the
+  Unraid autostart list.
+- Staging: `/mnt/user/antra-staging` mounted at the SAME path
+  (`/antra-staging`) in the bridge and in Lidarr, so no remote path mapping
+  is needed anywhere.
+- Lidarr container: recreated from a `docker inspect` dump with the extra
+  staging mount; the Unraid template gained an "Antra Staging" path config
+  so future UI edits keep the mount.
+- Backups in `/mnt/user/appdata/lidarr-backup/`: full appdata tar
+  (`appdata-lidarr-pre-antra-*.tar.gz`), `inspect-before-nightly-plus.json`,
+  `config.xml.bak`, `my-Lidarr.xml.bak`.
+- Plugin: release zip extracted to
+  `appdata/lidarr/plugins/maxschramp/Lidarr.Plugin.Antra/` (dll + pdb +
+  deps.json) + restart. Shows in Settings -> Plugins (0.1.0.1); the URL
+  installer works too.
+- Providers via API: Antra indexer + Antra download client (bridge URL
+  `http://<nas-lan-ip>:8890`) + Antra enabled in the Default delay profile.
+- Trial: Susumu Yokota - Sakura (not previously in the library) searched,
+  grabbed, downloaded (12/12 via tidal_mirror) and imported into
+  `/music/library`; tags verified (16/44.1 FLAC, correct metadata).
+- Ops notes: Unraid has no python3/jq - parse JSON on the workstation side.
+  `set -e` scripts that curl a booting service die on the first refusal;
+  loop with `|| true`. A just-added artist's first album search may carry
+  no release tracklist (release rows load lazily): the bridge falls back to
+  heuristics; later searches carry the full tracklist.
 
 ## 4. Failure modes (dev-tested) and responses
 
